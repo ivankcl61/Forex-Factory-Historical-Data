@@ -1,0 +1,68 @@
+# Import libraries
+!pip install selenium
+!pip install webdriver-manager
+import pandas as pd
+import numpy as np
+import regex as re
+
+import requests
+from bs4 import BeautifulSoup as BS
+from selenium import webdriver
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service as ChromeService
+import time
+
+# Determine the beginning and end of the date for parsing
+date_start = '1/15/2022'
+date_end = '1/20/2022'
+
+# Create dataframe for our data
+df = pd.DataFrame(columns = ('year', 'day', 'time', 'impact', 'cur', 'text', 'actual', 'forecast', 'previous'))
+
+# Create circle for every day
+for i in pd.date_range(start=date_start, end=date_end):
+# Create url address and parsing data of current day 
+    month = i.month_name().lower()[:3]
+    date = month + str(i.day) + '.' + str(i.year)
+    url = "https://www.forexfactory.com/calendar?day=" + date
+    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
+    driver.get(url)
+    html = driver.page_source
+    soup = BS(html, "html.parser")
+    
+#  Correcting the data
+    day = soup.find_all('td', class_='calendar__cell calendar__date date')
+    time = soup.find_all('td', class_='calendar__cell calendar__time time')
+    impact = soup.find_all('div', class_='calendar__impact-icon calendar__impact-icon--screen')
+    text = soup.find_all('td', class_='calendar__cell calendar__event event')
+    cur = soup.find_all('td', class_='calendar__cell calendar__currency currency')
+    actual = soup.find_all('td', class_='calendar__cell calendar__actual actual')
+    forecast = soup.find_all('td', class_='calendar__cell calendar__forecast forecast')
+    previous = soup.find_all('td', class_='calendar__cell calendar__previous previous')
+
+    day_arr = [i.text.strip()[3:] for i in day]
+    time_arr = [i.text.strip() for i in time]
+    impact_arr = [re.findall(r'<span class="(\w*)"', str(i))[0] for i in impact]
+    text_arr = [i.text.strip() for i in text]
+    cur_arr = [i.text.strip() for i in cur]
+    actual_arr = [i.text.strip() for i in actual]
+    forecast_arr = [i.text.strip() for i in forecast]
+    previous_arr = [i.text.strip() for i in previous]
+
+# Create dataframe for current day's data    
+    df1 = pd.DataFrame(data=zip(day_arr, time_arr, impact_arr, cur_arr, text_arr, actual_arr, forecast_arr, previous_arr),
+                     columns = ('day', 'time', 'impact', 'cur', 'text', 'actual', 'forecast', 'previous'))
+    df1 = df1.applymap(lambda x: np.NaN if x.strip() == '' else x)
+    
+# Add 'year', 'day' and 'time' columns
+    df1['year'] = i.year
+    df1[['day', 'time']] = df1[['day', 'time']].fillna(method='ffill')
+    
+# Add current day data to main dataframe
+    df = df._append(df1, ignore_index=True)
+
+# Look on our dataframe
+df.head()
+
+# Import data in csv file
+df.to_csv("data.csv", index=False)
